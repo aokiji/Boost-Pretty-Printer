@@ -36,6 +36,26 @@ import gdb
 import re
 import sys
 
+def days_to_date(days):
+    year = 100*((4*(days+32044)+3)/146097)+((4*(days+32044-((146097*((4*(days+32044)+3)/146097))/4))+3)/1461)-4800+(((5*(days+32044-((146097*((4*(days+32044)+3)/146097))/4)-(1461*((4*(days+32044-((146097*((4*(days+32044)+3)/146097))/4))+3)/1461))/4)+2)/153)/10);
+
+    month = ((5*(days+32044-((146097*((4*(days+32044)+3)/146097))/4)-(1461*((4*(days+32044-((146097*((4*(days+32044)+3)/146097))/4))+3)/1461))/4)+2)/153)+3-12*(((5*(days+32044-((146097*((4*(days+32044)+3)/146097))/4)-(1461*((4*(days+32044-((146097*((4*(days+32044)+3)/146097))/4))+3)/1461))/4)+2)/153)/10);
+
+    day = (days+32044-((146097*((4*(days+32044)+3)/146097))/4)-(1461*((4*(days+32044-((146097*((4*(days+32044)+3)/146097))/4))+3)/1461))/4)-((153*((5*(days+32044-((146097*((4*(days+32044)+3)/146097))/4)-(1461*((4*(days+32044-((146097*((4*(days+32044)+3)/146097))/4))+3)/1461))/4)+2)/153)+2)/5)+1;
+
+    return "%04d-%02d-%02d" % (year,month,day);
+
+def usecs_to_time(usecs):
+    hour = (usecs-86400000000*(usecs/86400000000))/3600000000;
+    min = (usecs-86400000000*(usecs/86400000000)-3600000000*((usecs-86400000000*(usecs/86400000000))/3600000000))/60000000;
+    sec = ((usecs-86400000000*(usecs/86400000000)-3600000000*((usecs-86400000000*(usecs/86400000000))/3600000000))-60000000*((usecs-86400000000*(usecs/86400000000) - 3600000000*((usecs-86400000000*(usecs/86400000000))/3600000000))/60000000))/1000000;
+    sec += (usecs%1000000)/1e6;
+
+    return "%d:%02d:%02.f" % (hour,min,sec);
+
+def usecs_to_datetime(usecs):
+    return "%s %s" % (days_to_date(usecs/86400000000), usecs_to_time(usecs));
+
 _have_gdb_printing = True
 try:
     import gdb.printing
@@ -353,6 +373,26 @@ class BoostSharedPtr:
         return '(%s) (count %d, weak count %d) %s' % (self.typename,
                                                       refcount, weakcount,
                                                       self.value['px'])
+
+@_register_printer
+class BoostLocalDateTime:
+    "Pretty Printer for boost::local_time::local_date_time (Boost.LocalDateTime)"
+    printer_name = 'boost::local_time::local_date_time'
+    version = '1.40'
+    type_name_re = '^boost::local_time::local_date_time_base<.*>$'
+
+    def __init__(self, value):
+        self.typename = value.type_name
+        self.value = value
+
+    def to_string(self):
+        dt = usecs_to_datetime(self.value['time_']['time_count_']['value_'])
+        if self.value['zone_']['px'] == 0x0:
+            return "%s UTC" % dt
+        else:
+            type = gdb.lookup_type('boost::local_time::posix_time_zone_base<char>');
+            zone = self.value['zone_']['px'].dereference().cast(type);
+            return "%s %s%s" % (dt, zone['zone_names_']['std_zone_abbrev_'], zone['base_utc_offset_'])
 
 @_register_printer
 class BoostCircular:
